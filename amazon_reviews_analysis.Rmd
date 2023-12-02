@@ -1,0 +1,182 @@
+---
+title: "Amazon Reviews Sentiment Analysis"
+author: "Nourhan Ghanima"
+date: "2023-12-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Decoding Consumer Sentiments: Analyzing Amazon Reviews for Product Perception and User Satisfaction
+
+Sentiment analysis is a technique that focuses on identifying the emotional tone or sentiment conveyed in a given piece of text.
+
+It's particularly useful from a business perspective because it can provide important insight 
+into customer opinions and preferences, which can then be used to make informed decisions about 
+products or servies, after identifying potential areas of improvement. It also allows the monitoring of brand reputation, which is key to managing and enhancing brand perception. 
+
+
+```{r echo = FALSE, message=FALSE}
+library(tidyverse)
+library(readr)
+library(tm)
+library(wordcloud)
+library(syuzhet)
+library(ggplot2)
+```
+
+```{r, include=FALSE, echo=FALSE}
+reviews1 <- read_csv("/Users/nourhanghanima/downloads/amazon_reviews/1429_1.csv")
+reviews2 <- read_csv("/Users/nourhanghanima/downloads/amazon_reviews/Datafiniti_Amazon_Consumer_Reviews_of_Amazon_Products_May19.csv")
+reviews3 <- read_csv("/Users/nourhanghanima/downloads/Datafiniti_Amazon_Consumer_Reviews_of_Amazon_Products.csv")
+
+reviews1 <- reviews1 |>
+  select(id, name, asins, brand, categories, 
+         manufacturer, reviews.numHelpful, 
+         reviews.rating, reviews.text, reviews.title, reviews.username)
+
+reviews2 <- reviews2 |>
+  select(id, name, asins, brand, categories, 
+                   manufacturer, reviews.numHelpful, 
+                   reviews.rating, reviews.text, reviews.title, reviews.username)
+
+reviews3 <- reviews3 |> 
+  select(id, name, asins, brand, categories, 
+         manufacturer, reviews.numHelpful, 
+         reviews.rating, reviews.text, reviews.title, reviews.username)
+
+amazon_reviews <- rbind(reviews1, reviews2, reviews3)
+
+
+# changing Amazonbasics to Amazon Basics, to avoid duplication
+amazon_reviews$brand <- sub("Amazonbasics", "AmazonBasics", amazon_reviews$brand)
+
+```
+
+
+The data for this project is taken from Kaggle, and includes user reviews left on a variety of products on Amazon.com.
+
+After some basic data cleaning done on Excel and R with the tidyverse package, the descriptive statistics for the dataset are as follows:
+
+```{r}
+summary(amazon_reviews)
+```
+
+The data includes 67992 reviews, for a total of 7 brands, all owned by Amazon. 
+
+## Which brand has the highest number of reviews?
+
+```{r}
+amazon_reviews |>
+  group_by(brand) |>
+  summarise(Count = n()) 
+```
+
+## Which brand has the highest average rating?
+
+```{r, echo = FALSE}
+#removing the brand Amazon Coco T because it has no star rating
+average_rating <- amazon_reviews |>
+  filter(brand != "Amazon Coco T") |>
+  group_by(brand) |>
+  summarise(average_rating = mean((reviews.rating), na.rm = TRUE))
+
+```
+
+From this plot showing average review ratings per brand, it's obvious that Amazon Digital Services has the lowest average rating. 
+
+```{r, fig.width=12}
+average_rating |>
+  ggplot(aes(x = brand, y=average_rating)) +
+  geom_col(fill= "blue") +
+  xlab("Brand") +
+  ylab ("Average Rating") +
+  theme_bw()
+```
+```{r}
+amazon_reviews |>
+  filter(brand != "Amazon Coco T") |>
+  group_by(brand) |>
+  summarise(average_rating = mean((reviews.rating), na.rm = TRUE))
+```
+The average star rating for Amazon Fire TV is the highest. 
+
+## Setting up sentiment analysis
+
+The first step is to create a corpus.
+
+```{r}
+corpus <- iconv(amazon_reviews$reviews.text)
+corpus <- Corpus(VectorSource(corpus))
+```
+
+I then transform the corpus to lowercase to avoid duplicates.
+
+```{r, warning=FALSE}
+corpus <- tm_map(corpus, tolower)
+```
+
+I then clean up the corpus by removing punctuation, numbers, and stopwords. 
+```{r, warning = FALSE}
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeWords, stopwords("english"))
+amazon_reviews_final <- corpus
+```
+
+Creating the term frequency matrix, which is a matrix of the frequency of each word in the reviews:
+```{r}
+tfm <- TermDocumentMatrix(amazon_reviews_final)
+tfm <- as.matrix(tfm)
+```
+
+The first ten rows and five columns of the frequency matrix are displayed below.
+```{r}
+tfm[1:10, 1:5]
+```
+
+## Plot of word frequency
+
+```{r}
+w <- rowSums(tfm)
+w <- subset(w, w >= 25)
+barplot(w, las = 2, col = "blue")
+```
+
+I limit the words to words that have a frequency of 25 or higher. 
+
+## The word cloud
+
+```{r, echo = FALSE, warning = FALSE}
+w <- sort(rowSums(tfm), decreasing = T)
+wordcloud(words = names(w), 
+          freq = w, 
+          max.words = 40, 
+          random.order = T,
+          min.freq = 5,
+          colors = brewer.pal(25, "Dark2"),
+          scale = c(3, 0, .3)
+          )
+```
+
+## Assigning sentiment scores for Amazon brand
+
+```{r}
+amazon_reviews_amazonbrand <- amazon_reviews |>
+  filter(brand == "Amazon")
+sentiment_data <- iconv(amazon_reviews_amazonbrand$reviews.text)
+sentiment <- get_nrc_sentiment(sentiment_data)
+sentiment[1:10, ]
+```
+
+
+## calculating the review wise score
+```{r}
+sentiment$score <- sentiment$positive - sentiment$negative
+sentiment[1:30, ]
+
+```
+
+Most of the sentiment scores for the Amazon brand are positive. 
